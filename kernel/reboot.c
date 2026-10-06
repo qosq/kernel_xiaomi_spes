@@ -307,8 +307,6 @@ DEFINE_MUTEX(system_transition_mutex);
  */
 #ifdef CONFIG_KSU_SUSFS
 extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);
-#elif defined(CONFIG_KSU)
-extern bool ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user *arg);
 #endif
 
 SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
@@ -325,9 +323,6 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 	}
 	return ret;
 orig_flow:
-#elif defined(CONFIG_KSU)
-	if (ksu_handle_sys_reboot(magic1, magic2, cmd, arg))
-		return 0;
 #endif
 
 	/* We only trust the superuser with rebooting the system. */
