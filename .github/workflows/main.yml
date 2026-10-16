@@ -1,4 +1,4 @@
-name: Build Kernel spes 4.19 BPF KSUN
+name: Build Kernel spes
 on:
   workflow_dispatch:
 
@@ -22,7 +22,7 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update && sudo apt-get install -y bison flex bc libssl-dev cpio lz4 xz-utils libelf-dev
-          wget https://github.com/qosq/toolchain-android/releases/download/clang-22/toolchain.tar.gz
+          curl -L https://github.com/qosq/toolchain-android/releases/download/clang-22/toolchain.tar.gz
           tar -xzf toolchain.tar.gz
           echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
           echo "$GITHUB_WORKSPACE/gcc64/bin" >> $GITHUB_PATH
@@ -44,13 +44,14 @@ jobs:
           repository: 'qosq/AnyKernel3'
           ref: 'spes'
           path: 'anykernel'
-      - name: Zip kernel
+      - name: Copy kernel Image
         run: |
           cp ./out/arch/arm64/boot/Image.gz ./anykernel
-          zip -r9 spes-4.19.zip anykernel/* -x README.md *placeholder
+          rm -f anykernel/README.md
       - name: Upload kernel
         uses: actions/upload-artifact@v7
         with:
-          name: kernel-zip
-          path: spes-4.19.zip
+          name: spes-4.19
+          path: anykernel/
+          compression-level: 9
           retention-days: 90
