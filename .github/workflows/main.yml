@@ -1,33 +1,56 @@
-# A simple action usage
 name: Build Kernel spes 4.19 BPF KSUN
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main-a16-sm8250-base-ksun-new
 
 jobs:
   Build-Kernel:
-    strategy:
-      fail-fast: false
     runs-on: ubuntu-latest
     permissions:
       contents: read
-
+    env:
+      ARCH: "arm64"
+      CC: "clang"
+      LLVM: 1
+      LLVM_IAS: 1
+      CROSS_COMPILE: "aarch64-linux-gnu-"
+      CROSS_COMPILE_ARM32: "arm-linux-gnueabi-"
     steps:
-      - name: Build Kernel spes 4.19 BPF KSUN
-        uses: dabao1955/kernel_build_action@main
+      - name: Checkout
+        uses: actions/checkout@v7
         with:
-          kernel-url: https://github.com/muralivijay/kernel_xiaomi_spes/
-          kernel-dir: msm-4.19
-          kernel-branch: main-a16-sm8250-base-ksun-new
-          config: vendor/spes-perf_defconfig
-          arch: arm64
-          aosp-gcc: true
-          aosp-clang: true
-          ksu-other: true
-          ksu-url: https://github.com/KernelSU-Next/KernelSU-Next
-          aosp-clang-version: r596125
-          anykernel3: true
-          anykernel3-url: https://github.com/muralivijay/AnyKernel3
-          extra-cmd: LLVM=1 LLVM_IAS=1
+          submodules: true
+      - name: Install tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y bison flex bc libssl-dev cpio lz4 xz-utils libelf-dev
+          wget https://github.com/qosq/toolchain-android/releases/download/clang-22/toolchain.tar.gz
+          tar -xzf toolchain.tar.gz
+          echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
+          echo "$GITHUB_WORKSPACE/gcc64/bin" >> $GITHUB_PATH
+          echo "$GITHUB_WORKSPACE/gcc32/bin" >> $GITHUB_PATH
+          KBUILD_BUILD_HOST="abm-p-$(shuf -i 1000-9999 -n 1)"
+      - name: Compile kernel
+        run: |
+          export KBUILD_BUILD_USER="android-build"
+          export KBUILD_BUILD_HOST="abm-p-$(shuf -i 1000-9999 -n 1)"
+          export KBUILD_BUILD_VERSION="1"
+          make O=out vendor/spes-perf_defconfig
+          scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+            arch/arm64/configs/vendor/debugfs.config
+          make O=out olddefconfig
+          make -j$(nproc) O=out Image.gz
+      - name: Checkout anykernel
+        uses: actions/checkout@v7
+        with:
+          repository: 'qosq/AnyKernel3'
+          ref: 'spes'
+          path: 'anykernel'
+      - name: Zip kernel
+        run: |
+          cp ./out/arch/arm64/boot/Image.gz ./anykernel
+          zip -r9 spes-4.19.zip anykernel/* -x README.md *placeholder
+      - name: Upload kernel
+        uses: actions/upload-artifact@v7
+        with:
+          name: kernel-zip
+          path: spes-4.19.zip
+          retention-days: 90
