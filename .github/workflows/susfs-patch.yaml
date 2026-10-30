@@ -1,0 +1,56 @@
+name: Susfs Patch
+run-name: patch-susfs [`${{ github.event.workflow_run.head_branch || github.ref_name }}`]
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Update Submodule
+    types:
+      - completed
+
+jobs:
+  patch-susfs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    env:
+      PATCH_REPO: "JackA1ltman/NonGKI_Kernel_Build_2nd"
+      PATCH_FILE: "Patches/Patch/susfs_patch_to_4.19.patch"
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_branch || github.ref }}
+          submodules: true
+          fetch-depth: 100
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y patchutils
+      - name: Check for patch updates and download
+        id: patch_logic
+        run: |
+          NEW_HASH=$(curl -fsSL "https://api.github.com/repos/${PATCH_REPO}/commits?path=${PATCH_FILE}&per_page=1" | jq -r '.[0].sha')
+          NEW_LINK="https://github.com/${PATCH_REPO}/commit/${NEW_HASH}"
+          OLD_LINK=$(git log --grep="^susfs: patch" -n 1 --format="%s" | grep -oP '\(\K[^)]+')
+          OLD_HASH=$(echo "$OLD_LINK" | grep -oP '/\K[^/]+$')
+          if [ "$NEW_LINK" == "$OLD_LINK" ]; then
+            echo "updated=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "updated=true" >> "$GITHUB_OUTPUT"
+          echo "new_link=$NEW_LINK" >> "$GITHUB_OUTPUT"
+          curl -LSso old.patch "https://raw.githubusercontent.com/${PATCH_REPO}/${OLD_HASH}/${PATCH_FILE}"
+          curl -LSso new.patch "https://raw.githubusercontent.com/${PATCH_REPO}/${NEW_HASH}/${PATCH_FILE}"
+      - name: Interdiff and Apply
+        if: steps.patch_logic.outputs.updated == 'true'
+        run: |
+          interdiff old.patch new.patch > diff.patch
+          git apply --reject diff.patch
+      - name: Commit and Push changes
+        if: steps.patch_logic.outputs.updated == 'true'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "susfs: patch (${{ steps.patch_logic.outputs.new_link }})"
+          git push origin HEAD:${{ github.event.workflow_run.head_branch || github.ref_name }}

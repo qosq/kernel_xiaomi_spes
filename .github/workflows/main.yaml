@@ -1,12 +1,19 @@
 name: Build Kernel spes
+run-name: build-kernel [`${{ github.event.workflow_run.head_branch || github.ref_name }}`]
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Susfs Patch
+    types:
+      - completed
 
 jobs:
-  Build-Kernel:
+  build-kernel:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     env:
       ARCH: "arm64"
       CC: "clang"
@@ -15,9 +22,10 @@ jobs:
       CROSS_COMPILE: "aarch64-linux-gnu-"
       CROSS_COMPILE_ARM32: "arm-linux-gnueabi-"
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.workflow_run.head_branch || github.ref }}
           submodules: true
       - name: Install tools
         run: |
@@ -47,10 +55,13 @@ jobs:
         run: |
           cp ./out/arch/arm64/boot/Image.gz ./anykernel
           rm -f anykernel/README.md
+      - name: Get Short SHA
+        id: vars
+        run: echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
       - name: Upload kernel
         uses: actions/upload-artifact@v7
         with:
-          name: spes-4.19
+          name: spes-4.19-${{ steps.vars.outputs.short_sha }}
           path: anykernel/
           compression-level: 9
           retention-days: 7
