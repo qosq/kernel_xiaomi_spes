@@ -42,7 +42,7 @@ extern struct vfsmount *susfs_get_non_sus_vfsmnt_from_vfsmnt(struct vfsmount *vf
  * have kvfree(), so only kvmalloc() needs a fallback here.
  */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0)
-static inline void *kvmalloc(size_t size, gfp_t flags)
+static inline void *susfs_kvmalloc(size_t size, gfp_t flags)
 {
 	void *p;
 
@@ -1413,7 +1413,11 @@ void susfs_set_priority_uid_filter(void __user **user_info) {
 	int err = 0;
 	static bool is_uid_filter_set_before = false;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0)
+	info = susfs_kvmalloc(sizeof(*info), GFP_KERNEL | __GFP_ZERO);
+#else
 	info = kvmalloc(sizeof(*info), GFP_KERNEL | __GFP_ZERO);
+#endif
 	if (!info) {
 		err = -ENOMEM;
 		goto out_copy_to_user;
@@ -1443,7 +1447,11 @@ void susfs_set_priority_uid_filter(void __user **user_info) {
 	 * The app names are stored as they are, so that the uids of the apps can
 	 * be resolved again later on, when the apps are installed or uninstalled.
 	 */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0)
+	new_app_strings = susfs_kvmalloc(app_str_len + 1, GFP_KERNEL | __GFP_ZERO);
+#else
 	new_app_strings = kvmalloc(app_str_len + 1, GFP_KERNEL | __GFP_ZERO);
+#endif
 	if (!new_app_strings) {
 		err = -ENOMEM;
 		goto out_copy_to_user;
@@ -1494,7 +1502,8 @@ void susfs_set_priority_uid_filter(void __user **user_info) {
 		is_uid_filter_set_before = true;
 	mutex_unlock(&susfs_mutex_lock_priority_uid_filter);
 	synchronize_rcu();
-	kfree_rcu(old_bitmap, rcu);
+	if (old_bitmap)
+		kfree_rcu(old_bitmap, rcu);
 
 	SUSFS_LOGI("the priority uid filter is set\n");
 	err = 0;
@@ -1540,7 +1549,11 @@ static int susfs_priority_app_strings_worker(void *data) {
 	mutex_lock(&susfs_mutex_lock_priority_uid_filter);
 	if (susfs_priority_app_strings) {
 		app_str_len = strlen(susfs_priority_app_strings);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0)
+		app_strings = susfs_kvmalloc(app_str_len + 1, GFP_KERNEL | __GFP_ZERO);
+#else
 		app_strings = kvmalloc(app_str_len + 1, GFP_KERNEL | __GFP_ZERO);
+#endif
 		if (app_strings)
 			memcpy(app_strings, susfs_priority_app_strings, app_str_len + 1);
 	}
@@ -1568,7 +1581,8 @@ static int susfs_priority_app_strings_worker(void *data) {
 	new_bitmap = NULL;
 	mutex_unlock(&susfs_mutex_lock_priority_uid_filter);
 	synchronize_rcu();
-	kfree_rcu(old_bitmap, rcu);
+	if (old_bitmap)
+		kfree_rcu(old_bitmap, rcu);
 
 	SUSFS_LOGI("the uids of the priority uid filter are resolved again\n");
 
