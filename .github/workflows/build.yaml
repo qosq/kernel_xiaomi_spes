@@ -56,12 +56,13 @@ jobs:
           cp ./out/arch/arm64/boot/Image.gz ./anykernel
           rm -f anykernel/README.md
       - name: Get Short SHA
-        id: vars
-        run: echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+        run: |
+          FULL_SHA=$(git rev-parse HEAD 2>/dev/null || echo "${{ github.sha }}")
+          echo "SHORT_SHA=${FULL_SHA::7}" >> $GITHUB_ENV
       - name: Upload kernel
         uses: actions/upload-artifact@v7
         with:
-          name: spes-4.19-${{ steps.vars.outputs.short_sha }}
+          name: spes-4.19-${SHORT_SHA}
           path: anykernel/
           compression-level: 9
           retention-days: 7

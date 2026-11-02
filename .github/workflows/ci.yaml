@@ -7,14 +7,26 @@ on:
         description: "Run KSU Update"
         required: true
         type: boolean
+        default: true
+      commit_hash_ksu:
+        description: 'KSU full hash'
+        type: string
+      run_patch:
+        description: "Run SUSFS Patch"
+        required: true
+        type: boolean
         default: false
+      commit_hash_patch:
+        description: 'Patch full hash'
+        type: string
 permissions:
   contents: write
 
 jobs:
 
   patch-susfs:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
+    if: ${{ inputs.run_patch == true }}
     env:
       PATCH_REPO: "JackA1ltman/NonGKI_Kernel_Build_2nd"
       PATCH_FILE: "Patches/Patch/susfs_patch_to_4.19.patch"
@@ -28,8 +40,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y patchutils
       - name: Check for patch updates and download
         id: check
+        env:
+          NEW_HASH: ${{ inputs.commit_hash_patch }}
         run: |
-          NEW_HASH=$(curl -fsSL "https://api.github.com/repos/${PATCH_REPO}/commits?path=${PATCH_FILE}&per_page=1" | jq -r '.[0].sha')
+          if [[ -z "$NEW_HASH" ]]; then
+            NEW_HASH=$(curl -fsSL "https://api.github.com/repos/${PATCH_REPO}/commits?path=${PATCH_FILE}&per_page=1" | jq -r '.[0].sha')
+          fi
           NEW_LINK="https://github.com/${PATCH_REPO}/commit/${NEW_HASH}"
           OLD_LINK=$(git log --grep="^susfs: patch" -n 1 --format="%s" | grep -oP '\(\K[^)]+')
           OLD_HASH=$(echo "$OLD_LINK" | grep -oP '/\K[^/]+$')
@@ -58,29 +74,35 @@ jobs:
   update-submodule:
     needs: patch-susfs
     if: ${{ inputs.run_submodule == true }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
       - name: Checkout repo
         uses: actions/checkout@v7
         with:
           ref: ${{ github.ref_name }}
           submodules: recursive
-          fetch-depth: 2
       - name: Update submodule to latest commit
+        env:
+          COMMIT_HASH: ${{ inputs.commit_hash_ksu }}
+        id: check
         run: |
           git submodule update --remote --recursive
-      - name: Commit and Push changes
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          [[ -z "$COMMIT_HASH" ]] || git switch "$COMMIT_HASH"
           git add .
           if [[ -z $(git status -s) ]]; then
             echo "Nothing to commit."
-            exit 0
+            echo "updated=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "updated=true" >> "$GITHUB_OUTPUT"
           fi
+      - name: Commit and Push changes
+        if: steps.check.outputs.updated == 'true'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git commit -F - <<EOF
-            bksu: update main branch to latest commit
+          bksu: update (https://github.com/Baka-SU/BakaSU/commit/$(git rev-parse HEAD:KernelSU))
 
-            $(git diff --cached --submodule)
+          $(git diff --cached --submodule)
           EOF
           git push origin HEAD:${{ github.ref_name }}
