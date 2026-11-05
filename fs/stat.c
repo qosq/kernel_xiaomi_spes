@@ -24,6 +24,7 @@
 
 #include <linux/uaccess.h>
 #include <asm/unistd.h>
+#include "internal.h"
 
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 extern bool susfs_is_inode_sus_kstat(struct inode *inode, bool *out_is_fuse);
@@ -93,10 +94,11 @@ int vfs_getattr_nosec(const struct path *path, struct kstat *stat,
 				// stat->mnt_id = real_mount(path->mnt)->mnt_id;
 				// only for 5.10 kernel
 				stat->result_mask |= STATX_SUS_KSTAT;
+			} else {
+				// stat->mnt_id = real_mount(path->mnt)->mnt_id;
+				// only for 5.10 kernel
+				stat->result_mask |= STATX_SUS_KSTAT_FUSE;
 			}
-			// stat->mnt_id = real_mount(path->mnt)->mnt_id;
-			// only for 5.10 kernel
-			stat->result_mask |= STATX_SUS_KSTAT_FUSE;
 		}
 	}
 #endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
@@ -113,7 +115,7 @@ int vfs_getattr_nosec(const struct path *path, struct kstat *stat,
 			}
 			if (stat->result_mask & STATX_SUS_KSTAT_FUSE) {
 				susfs_sus_kstat_spoof_generic_fillattr(inode, stat, STATX_SUS_KSTAT_FUSE);
-			return err;
+				return err;
 			}
 		}
 		return err;
@@ -252,19 +254,20 @@ int vfs_statx(int dfd, const char __user *filename, int flags,
 
 retry:
 #ifdef CONFIG_KSU_SUSFS
+	fname = getname_flags(filename, lookup_flags, NULL);
 	if (likely(!susfs_is_current_proc_no_su())) {
 		if (static_branch_likely(&ksu_su_compat_enabled)) {
 			if (unlikely(__ksu_is_allow_uid_for_current(current_uid().val))) {
-				struct filename *fname = getname_flags(filename, lookup_flags, NULL);
 				if (!IS_ERR(fname)) {
 					ksu_handle_stat(&dfd, &fname, &flags);
-					putname(fname);
 				}
 			}
 		}
 	}
-#endif
+	error = filename_lookup(dfd, fname, lookup_flags, &path, NULL);
+#else
 	error = user_path_at(dfd, filename, lookup_flags, &path);
+#endif
 	if (error)
 		goto out;
 

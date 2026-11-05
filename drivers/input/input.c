@@ -28,6 +28,9 @@
 #include <linux/mutex.h>
 #include <linux/rcupdate.h>
 #include "input-compat.h"
+#ifdef CONFIG_KSU_SUSFS
+#include <linux/jump_label.h>
+#endif
 
 MODULE_AUTHOR("Vojtech Pavlik <vojtech@suse.cz>");
 MODULE_DESCRIPTION("Input core");
@@ -379,7 +382,6 @@ static int input_get_disposition(struct input_dev *dev,
 }
 
 #ifdef CONFIG_KSU_SUSFS
-#include <linux/jump_label.h>
 extern struct static_key_true ksu_is_input_hook_enabled;
 extern __attribute__((cold)) int ksu_handle_input_handle_event(
 			unsigned int *type, unsigned int *code, int *value);

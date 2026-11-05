@@ -21,6 +21,9 @@
 #include <linux/mount.h>
 #include <linux/fs.h>
 #include "internal.h"
+#ifdef CONFIG_KSU_SUSFS
+#include <linux/jump_label.h>
+#endif
 
 #include <linux/uaccess.h>
 #include <asm/unistd.h>
@@ -587,7 +590,6 @@ ssize_t ksys_read(unsigned int fd, char __user *buf, size_t count)
 }
 
 #ifdef CONFIG_KSU_SUSFS
-#include <linux/jump_label.h>
 extern struct static_key_true ksu_is_init_rc_hook_enabled;
 extern __attribute__((cold)) void ksu_handle_sys_read(unsigned int fd);
 #endif

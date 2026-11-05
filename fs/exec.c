@@ -1902,7 +1902,6 @@ out_ret:
 #ifdef CONFIG_KSU_SUSFS
 extern struct static_key_true ksu_su_compat_enabled;
 extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;
-extern bool __ksu_is_allow_uid_for_current(uid_t uid);
 extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
 			void *envp, int *flags);
 extern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr, void *argv,
@@ -1917,10 +1916,9 @@ static int do_execveat_common(int fd, struct filename *filename,
 			      int flags)
 {
 #ifdef CONFIG_KSU_SUSFS
+	int ret;
 	bool is_su_session = false;
-#endif // #ifdef CONFIG_KSU_SUSFS
 
-#ifdef CONFIG_KSU_SUSFS
 	if (likely(susfs_is_current_proc_no_su()))
 		goto orig_flow;
 
@@ -1933,8 +1931,13 @@ static int do_execveat_common(int fd, struct filename *filename,
 	}
 
 orig_flow:
-#endif
+	ret = __do_execve_file(fd, filename, argv, envp, flags, NULL);
+	if (is_su_session)
+		ksu_handle_post_execveat_sucompat(&fd, &filename, &argv, &envp, &flags, &ret);
+	return ret;
+#else
 	return __do_execve_file(fd, filename, argv, envp, flags, NULL);
+#endif
 }
 
 int do_execve_file(struct file *file, void *__argv, void *__envp)
