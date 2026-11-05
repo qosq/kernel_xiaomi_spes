@@ -2221,8 +2221,8 @@ static int move_freepages(struct zone *zone,
 		}
 
                  /* CRITICAL FIX: Guard against poisoned LRU pointers */
-		if (unlikely((unsigned long)page->lru.next == LIST_POISON1 ||
-			     (unsigned long)page->lru.prev == LIST_POISON2 ||
+		if (unlikely(page->lru.next == LIST_POISON1 ||
+			     page->lru.prev == LIST_POISON2 ||
 			     list_empty(&page->lru))) {
 			page++;
 			continue;
@@ -3145,8 +3145,8 @@ int __isolate_free_page(struct page *page, unsigned int order)
            return 0;
 
        /* 2. CRITICAL FIX: Intercept poisoned LRU pointers from XArray races */
-	if (unlikely((unsigned long)page->lru.next == LIST_POISON1 ||
-		     (unsigned long)page->lru.prev == LIST_POISON2 ||
+	if (unlikely(page->lru.next == LIST_POISON1 ||
+		     page->lru.prev == LIST_POISON2 ||
 		     list_empty(&page->lru)))
 		return 0;
 
