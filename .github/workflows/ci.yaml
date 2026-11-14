@@ -3,13 +3,21 @@ run-name: ci
 on:
   workflow_dispatch:
     inputs:
-      run_submodule:
+      run_submodule_ksu:
         description: "Run KSU Update"
         required: true
         type: boolean
-        default: true
+        default: false
       commit_hash_ksu:
         description: 'KSU full hash'
+        type: string
+      run_submodule_nm:
+        description: "Run NM Update"
+        required: true
+        type: boolean
+        default: false
+      commit_hash_nm:
+        description: 'NoMount full hash'
         type: string
       run_patch:
         description: "Run SUSFS Patch"
@@ -25,7 +33,7 @@ permissions:
 jobs:
 
   update_submodule:
-    if: ${{ inputs.run_submodule == true }}
+    if: ${{ inputs.run_submodule_ksu == true || inputs.run_submodule_nm == true }}
     runs-on: ubuntu-slim
     outputs:
       status: ${{ steps.check.outputs.updated }}
@@ -36,14 +44,24 @@ jobs:
           ref: ${{ github.ref_name }}
       - name: Update submodule to latest commit
         env:
-          COMMIT_HASH: ${{ inputs.commit_hash_ksu }}
+          KSU_HASH: ${{ inputs.commit_hash_ksu }}
+          NM_HASH: ${{ inputs.commit_hash_nm }}
         id: check
         run: |
-          git submodule update --init --remote
-          if [[ -n "$COMMIT_HASH" ]]; then
+          git submodule update --init
+          if [[ -n "$KSU_HASH" ]]; then
             cd KernelSU/
-            git switch "$COMMIT_HASH" --detach
+            git switch "$KSU_HASH" --detach
             cd ..
+          else
+            git submodule update --remote -- KernelSU
+          fi
+          if [[ -n "$NM_HASH" ]]; then
+            cd NoMount/
+            git switch "$NM_HASH" --detach
+            cd ..
+          else
+            git submodule update --remote -- NoMount
           fi
           git add .
           if [[ -z $(git status -s) ]]; then
