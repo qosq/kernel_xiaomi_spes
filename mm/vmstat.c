@@ -1203,6 +1203,15 @@ const char * const vmstat_text[] = {
 	"pgscan_kswapd",
 	"pgscan_direct",
 	"pgscan_direct_throttle",
+	"lru_kswapd_no_progress",
+	"lru_kswapd_anon",
+	"lru_kswapd_file",
+	"lru_direct_anon",
+	"lru_direct_file",
+	"lru_kswapd_swap_full",
+	"lru_direct_swap_full",
+	"lru_no_gfp_io",
+	"lru_no_writepage",
 
 #ifdef CONFIG_NUMA
 	"zone_reclaim_failed",
@@ -1246,6 +1255,10 @@ const char * const vmstat_text[] = {
 #ifdef CONFIG_HUGETLB_PAGE
 	"htlb_buddy_alloc_success",
 	"htlb_buddy_alloc_fail",
+#endif
+#ifdef CONFIG_CMA
+	"cma_alloc_success",
+	"cma_alloc_fail",
 #endif
 	"unevictable_pgs_culled",
 	"unevictable_pgs_scanned",

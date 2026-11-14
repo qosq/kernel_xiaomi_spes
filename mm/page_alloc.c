@@ -2220,22 +2220,7 @@ static int move_freepages(struct zone *zone,
 			continue;
 		}
 
-                 /* CRITICAL FIX: Guard against poisoned LRU pointers */
-		if (unlikely(page->lru.next == LIST_POISON1 ||
-			     page->lru.prev == LIST_POISON2 ||
-			     list_empty(&page->lru))) {
-			page++;
-			continue;
-		}
-
 		order = page_order(page);
-
-                /* Sanity check on order bounds before bit-shifting */
-		if (unlikely(order >= MAX_ORDER)) {
-			page++;
-			continue;
-		}
-
 		list_move(&page->lru,
 			  &zone->free_area[order].free_list[migratetype]);
 		page += 1 << order;
@@ -3140,19 +3125,7 @@ int __isolate_free_page(struct page *page, unsigned int order)
 	struct zone *zone;
 	int mt;
 
-       /* 1. Abort if page is not a valid buddy page */
-       if (unlikely(!PageBuddy(page)))
-           return 0;
-
-       /* 2. CRITICAL FIX: Intercept poisoned LRU pointers from XArray races */
-	if (unlikely(page->lru.next == LIST_POISON1 ||
-		     page->lru.prev == LIST_POISON2 ||
-		     list_empty(&page->lru)))
-		return 0;
-
-	/* 3. Verify page order matches */
-	if (unlikely(page_order(page) != order))
-		return 0;
+	BUG_ON(!PageBuddy(page));
 
 	zone = page_zone(page);
 	mt = get_pageblock_migratetype(page);
@@ -3170,10 +3143,6 @@ int __isolate_free_page(struct page *page, unsigned int order)
 
 		__mod_zone_freepage_state(zone, -(1UL << order), mt);
 	}
-
-      /* 4. Double check Buddy status right before unlinking */
-	if (unlikely(!PageBuddy(page)))
-		return 0;
 
 	/* Remove page from free list */
 	list_del(&page->lru);
@@ -4247,7 +4216,7 @@ static int
 __perform_reclaim(gfp_t gfp_mask, unsigned int order,
 					const struct alloc_context *ac)
 {
-	struct reclaim_state reclaim_state;
+	struct reclaim_state reclaim_state = {};
 	int progress;
 	unsigned int noreclaim_flag;
 	unsigned long pflags;
