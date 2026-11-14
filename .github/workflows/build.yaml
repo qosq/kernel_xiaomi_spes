@@ -61,3 +61,11 @@ jobs:
           path: anykernel/
           compression-level: 9
           retention-days: 7
+      - name: Upload defconfig
+        uses: actions/upload-artifact@v7
+        with:
+          name: defconfig
+          path: out/.config
+          include-hidden-files: true
+          archive: false
+          retention-days: 7
