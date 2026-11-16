@@ -76,7 +76,7 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git commit -F - <<EOF
-          bksu: update (https://github.com/Baka-SU/BakaSU/commit/$(git rev-parse HEAD:KernelSU))
+          bksu: update (https://github.com/Baka-SU/BakaSU/commit/$(git -C KernelSU rev-parse HEAD))
 
           $(git diff --cached --submodule)
           EOF
