@@ -20,14 +20,16 @@
 #include <linux/syscalls.h>
 #include <linux/unistd.h>
 #include <linux/compat.h>
+#ifdef CONFIG_KSU_SUSFS
+#include <linux/susfs_def.h>
+#endif // #ifdef CONFIG_KSU_SUSFS
+
+#include <linux/uaccess.h>
 
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 #include <linux/susfs_def.h>
-extern int susfs_get_data_path(struct path *path);
-extern bool susfs_is_inode_sus_path(struct inode *inode);
-#endif
-
-#include <linux/uaccess.h>
+extern __attribute__((hot)) bool susfs_is_inode_sus_path(struct inode *inode);
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 
 int iterate_dir(struct file *file, struct dir_context *ctx)
 {
@@ -127,7 +129,7 @@ struct readdir_callback {
 	struct old_linux_dirent __user * dirent;
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	struct super_block *sb;
-#endif
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	int result;
 };
 
@@ -140,7 +142,7 @@ static int fillonedir(struct dir_context *ctx, const char *name, int namlen,
 	unsigned long d_ino;
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	struct inode *inode;
-#endif
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 
 	if (buf->result)
 		return -EINVAL;
@@ -163,7 +165,7 @@ static int fillonedir(struct dir_context *ctx, const char *name, int namlen,
 	}
 	iput(inode);
 orig_flow:
-#endif
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	buf->result++;
 	dirent = buf->dirent;
 	if (!access_ok(VERIFY_WRITE, dirent,
@@ -191,36 +193,19 @@ SYSCALL_DEFINE3(old_readdir, unsigned int, fd,
 		.ctx.actor = fillonedir,
 		.dirent = dirent
 	};
-#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	int path_err = -EINVAL;
-	struct path path;
-#endif
 
 	if (!f.file)
 		return -EBADF;
 
 
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	if (f.file->f_inode->i_sb->s_magic == FUSE_SUPER_MAGIC) {
-		path_err = susfs_get_data_path(&path);
-		if (!path_err) {
-			buf.sb = path.dentry->d_inode->i_sb;
-			goto orig_flow;
-		}
-	}
 	buf.sb = f.file->f_inode->i_sb;
-
-orig_flow:
-#endif
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	error = iterate_dir(f.file, &buf.ctx);
 	if (buf.result)
 		error = buf.result;
 
 	fdput_pos(f);
-#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	if (!path_err)
-		path_put(&path);
-#endif
 	return error;
 }
 
@@ -242,7 +227,7 @@ struct getdents_callback {
 	struct linux_dirent __user * current_dir;
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	struct super_block *sb;
-#endif
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	struct linux_dirent __user * previous;
 	int count;
 	int error;
@@ -259,7 +244,7 @@ static int filldir(struct dir_context *ctx, const char *name, int namlen,
 		sizeof(long));
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	struct inode *inode;
-#endif
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 
 	buf->error = verify_dirent_name(name, namlen);
 	if (unlikely(buf->error))
@@ -290,7 +275,7 @@ static int filldir(struct dir_context *ctx, const char *name, int namlen,
 	}
 	iput(inode);
 orig_flow:
-#endif
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	dirent = buf->current_dir;
 	if (__put_user(d_ino, &dirent->d_ino))
 		goto efault;
@@ -323,10 +308,6 @@ SYSCALL_DEFINE3(getdents, unsigned int, fd,
 		.current_dir = dirent
 	};
 	int error;
-#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	int path_err = -EINVAL;
-	struct path path;
-#endif
 
 	if (!access_ok(VERIFY_WRITE, dirent, count))
 		return -EFAULT;
@@ -336,17 +317,8 @@ SYSCALL_DEFINE3(getdents, unsigned int, fd,
 		return -EBADF;
 
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	if (f.file->f_inode->i_sb->s_magic == FUSE_SUPER_MAGIC) {
-		path_err = susfs_get_data_path(&path);
-		if (!path_err) {
-			buf.sb = path.dentry->d_inode->i_sb;
-			goto orig_flow;
-		}
-	}
 	buf.sb = f.file->f_inode->i_sb;
-
-orig_flow:
-#endif
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	error = iterate_dir(f.file, &buf.ctx);
 	if (error >= 0)
 		error = buf.error;
@@ -358,10 +330,6 @@ orig_flow:
 			error = count - buf.count;
 	}
 	fdput_pos(f);
-#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	if (!path_err)
-		path_put(&path);
-#endif
 	return error;
 }
 
@@ -370,7 +338,7 @@ struct getdents_callback64 {
 	struct linux_dirent64 __user * current_dir;
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	struct super_block *sb;
-#endif
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	struct linux_dirent64 __user * previous;
 	int count;
 	int error;
@@ -386,7 +354,7 @@ static int filldir64(struct dir_context *ctx, const char *name, int namlen,
 		sizeof(u64));
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	struct inode *inode;
-#endif
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 
 	buf->error = verify_dirent_name(name, namlen);
 	if (unlikely(buf->error))
@@ -412,7 +380,7 @@ static int filldir64(struct dir_context *ctx, const char *name, int namlen,
 	}
 	iput(inode);
 orig_flow:
-#endif
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	dirent = buf->current_dir;
 	if (__put_user(ino, &dirent->d_ino))
 		goto efault;
@@ -447,10 +415,6 @@ int ksys_getdents64(unsigned int fd, struct linux_dirent64 __user *dirent,
 		.current_dir = dirent
 	};
 	int error;
-#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	int path_err = -EINVAL;
-	struct path path;
-#endif
 
 	if (!access_ok(VERIFY_WRITE, dirent, count))
 		return -EFAULT;
@@ -460,17 +424,8 @@ int ksys_getdents64(unsigned int fd, struct linux_dirent64 __user *dirent,
 		return -EBADF;
 
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	if (f.file->f_inode->i_sb->s_magic == FUSE_SUPER_MAGIC) {
-		path_err = susfs_get_data_path(&path);
-		if (!path_err) {
-			buf.sb = path.dentry->d_inode->i_sb;
-			goto orig_flow;
-		}
-	}
 	buf.sb = f.file->f_inode->i_sb;
-
-orig_flow:
-#endif
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	error = iterate_dir(f.file, &buf.ctx);
 	if (error >= 0)
 		error = buf.error;
@@ -483,10 +438,6 @@ orig_flow:
 			error = count - buf.count;
 	}
 	fdput_pos(f);
-#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	if (!path_err)
-		path_put(&path);
-#endif
 	return error;
 }
 
@@ -510,7 +461,7 @@ struct compat_readdir_callback {
 	struct compat_old_linux_dirent __user *dirent;
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	struct super_block *sb;
-#endif
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	int result;
 };
 
@@ -524,7 +475,7 @@ static int compat_fillonedir(struct dir_context *ctx, const char *name,
 	compat_ulong_t d_ino;
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	struct inode *inode;
-#endif
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 
 	if (buf->result)
 		return -EINVAL;
@@ -547,7 +498,7 @@ static int compat_fillonedir(struct dir_context *ctx, const char *name,
 	}
 	iput(inode);
 orig_flow:
-#endif
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	buf->result++;
 	dirent = buf->dirent;
 	if (!access_ok(VERIFY_WRITE, dirent,
@@ -575,35 +526,18 @@ COMPAT_SYSCALL_DEFINE3(old_readdir, unsigned int, fd,
 		.ctx.actor = compat_fillonedir,
 		.dirent = dirent
 	};
-#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	int path_err = -EINVAL;
-	struct path path;
-#endif
 
 	if (!f.file)
 		return -EBADF;
 
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	if (f.file->f_inode->i_sb->s_magic == FUSE_SUPER_MAGIC) {
-		path_err = susfs_get_data_path(&path);
-		if (!path_err) {
-			buf.sb = path.dentry->d_inode->i_sb;
-			goto orig_flow;
-		}
-	}
 	buf.sb = f.file->f_inode->i_sb;
-
-orig_flow:
-#endif
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	error = iterate_dir(f.file, &buf.ctx);
 	if (buf.result)
 		error = buf.result;
 
 	fdput_pos(f);
-#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	if (!path_err)
-		path_put(&path);
-#endif
 	return error;
 }
 
@@ -619,7 +553,7 @@ struct compat_getdents_callback {
 	struct compat_linux_dirent __user *current_dir;
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	struct super_block *sb;
-#endif
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	struct compat_linux_dirent __user *previous;
 	int count;
 	int error;
@@ -636,7 +570,7 @@ static int compat_filldir(struct dir_context *ctx, const char *name, int namlen,
 		namlen + 2, sizeof(compat_long_t));
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	struct inode *inode;
-#endif
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 
 	buf->error = -EINVAL;	/* only used if we fail.. */
 	if (reclen > buf->count)
@@ -665,7 +599,7 @@ static int compat_filldir(struct dir_context *ctx, const char *name, int namlen,
 	}
 	iput(inode);
 orig_flow:
-#endif
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	dirent = buf->current_dir;
 	if (__put_user(d_ino, &dirent->d_ino))
 		goto efault;
@@ -698,10 +632,6 @@ COMPAT_SYSCALL_DEFINE3(getdents, unsigned int, fd,
 		.count = count
 	};
 	int error;
-#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	int path_err = -EINVAL;
-	struct path path;
-#endif
 
 	if (!access_ok(VERIFY_WRITE, dirent, count))
 		return -EFAULT;
@@ -712,17 +642,8 @@ COMPAT_SYSCALL_DEFINE3(getdents, unsigned int, fd,
 
 
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	if (f.file->f_inode->i_sb->s_magic == FUSE_SUPER_MAGIC) {
-		path_err = susfs_get_data_path(&path);
-		if (!path_err) {
-			buf.sb = path.dentry->d_inode->i_sb;
-			goto orig_flow;
-		}
-	}
 	buf.sb = f.file->f_inode->i_sb;
-
-orig_flow:
-#endif
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	error = iterate_dir(f.file, &buf.ctx);
 	if (error >= 0)
 		error = buf.error;
@@ -734,10 +655,6 @@ orig_flow:
 			error = count - buf.count;
 	}
 	fdput_pos(f);
-#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	if (!path_err)
-		path_put(&path);
-#endif
 	return error;
 }
 #endif
