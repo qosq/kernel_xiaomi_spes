@@ -1,5 +1,5 @@
 name: CI
-run-name: ci
+run-name: "ci${{ inputs.run_submodule_ksu && ' · ksu' || '' }}${{ inputs.run_submodule_nm && ' · nm' || '' }}${{ inputs.run_patch && ' · patch' || '' }}"
 on:
   workflow_dispatch:
     inputs:
@@ -48,6 +48,7 @@ jobs:
           NM_HASH: ${{ inputs.commit_hash_nm }}
         id: check
         run: |
+          set -euo pipefail
           git submodule update --init
           if [[ -n "$KSU_HASH" ]]; then
             cd KernelSU/
@@ -70,17 +71,57 @@ jobs:
           else
             echo "updated=true" >> "$GITHUB_OUTPUT"
           fi
-      - name: Commit and Push changes
+      - name: Prepare commit message
         if: steps.check.outputs.updated == 'true'
+        id: msg
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git commit -F - <<EOF
-          bksu: update (https://github.com/Baka-SU/BakaSU/commit/$(git -C KernelSU rev-parse HEAD))
+          set -euo pipefail
+          MSG=""
+          if ! git diff --cached --quiet -- KernelSU; then
+            MSG="bksu: update (https://github.com/Baka-SU/BakaSU/commit/$(git -C KernelSU rev-parse HEAD))"
+          fi
+          if ! git diff --cached --quiet -- NoMount; then
+            [ -n "$MSG" ] && MSG="$MSG"$'\n'
+            MSG="${MSG}nomount: update (https://github.com/maxsteeel/nomount/commit/$(git -C NoMount rev-parse HEAD))"
+          fi
 
-          $(git diff --cached --submodule)
-          EOF
-          git push origin HEAD:${{ github.ref_name }}
+          DIFF=$(git diff --cached --submodule=log | awk '
+            /^Submodule /{n=0; print; next}
+            /^  >/{n++; if(n<=3) print; else if(n==4) print "  ..."; next}
+            {print}
+          ')
+
+          FULL_MSG="${MSG}"$'\n\n'"${DIFF}"
+
+          {
+            echo "commit_msg<<ENDOFMSG"
+            echo "$FULL_MSG"
+            echo "ENDOFMSG"
+          } >> "$GITHUB_OUTPUT"
+      - name: Commit and Push
+        if: steps.check.outputs.updated == 'true'
+        uses: ./.github/actions/commit-push
+        with:
+          message: ${{ steps.msg.outputs.commit_msg }}
+          ref: ${{ github.ref_name }}
+      - name: Summary
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "## 📦 Submodule Update"
+            echo ""
+            echo "| Submodule | Old | New | Changed |"
+            echo "|-----------|-----|-----|---------|"
+            KSU_CHANGED="—"
+            NM_CHANGED="—"
+            [[ "${{ steps.check.outputs.ksu_old }}" != "${{ steps.check.outputs.ksu_new }}" ]] && KSU_CHANGED="✅"
+            [[ "${{ steps.check.outputs.nm_old }}" != "${{ steps.check.outputs.nm_new }}" ]] && NM_CHANGED="✅"
+            echo "| KernelSU | \`${{ steps.check.outputs.ksu_old }}\` | \`${{ steps.check.outputs.ksu_new }}\` | ${KSU_CHANGED} |"
+            echo "| NoMount | \`${{ steps.check.outputs.nm_old }}\` | \`${{ steps.check.outputs.nm_new }}\` | ${NM_CHANGED} |"
+            echo ""
+            echo "**Result:** ${{ steps.check.outputs.updated == 'true' && '🟢 Committed and pushed' || '⚪ No changes' }}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   patch_susfs:
     runs-on: ubuntu-latest
@@ -100,39 +141,66 @@ jobs:
           fetch-depth: 1000
           filter: 'tree:0'
       - name: Install tools
-        run: sudo apt-get update && sudo apt-get install -y patchutils
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y patchutils
       - name: Check for patch updates and download
         id: check
         env:
           NEW_HASH: ${{ inputs.commit_hash_patch }}
         run: |
+          set -euo pipefail
           if [[ -z "$NEW_HASH" ]]; then
-            NEW_HASH=$(curl -fsSL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/repos/${PATCH_REPO}/commits?path=${PATCH_FILE}&per_page=1" | jq -r '.[0].sha')
+            NEW_HASH=$(curl -fsSL --retry 3 -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/repos/${PATCH_REPO}/commits?path=${PATCH_FILE}&per_page=1" | jq -r '.[0].sha')
+            if [[ -z "$NEW_HASH" || "$NEW_HASH" == "null" ]]; then
+              echo "::error::Failed to fetch latest commit hash from ${PATCH_REPO}"
+              exit 1
+            fi
           fi
           NEW_LINK="https://github.com/${PATCH_REPO}/commit/${NEW_HASH}"
           OLD_LINK=$(git log --grep="^susfs: patch" -n 1 --format="%s" | grep -oP '\(\K[^)]+')
           OLD_HASH=$(echo "$OLD_LINK" | grep -oP '/\K[^/]+$')
+
+          echo "old_link=$OLD_LINK" >> "$GITHUB_OUTPUT"
+          echo "old_hash=${OLD_HASH::7}" >> "$GITHUB_OUTPUT"
+          echo "new_hash=${NEW_HASH::7}" >> "$GITHUB_OUTPUT"
+          echo "new_link=$NEW_LINK" >> "$GITHUB_OUTPUT"
+
           if [ "$NEW_LINK" == "$OLD_LINK" ]; then
             echo "updated=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "updated=true" >> "$GITHUB_OUTPUT"
-          echo "new_link=$NEW_LINK" >> "$GITHUB_OUTPUT"
-          curl -LSso old.patch "https://raw.githubusercontent.com/${PATCH_REPO}/${OLD_HASH}/${PATCH_FILE}"
-          curl -LSso new.patch "https://raw.githubusercontent.com/${PATCH_REPO}/${NEW_HASH}/${PATCH_FILE}"
+          curl -LSso old.patch --retry 3 "https://raw.githubusercontent.com/${PATCH_REPO}/${OLD_HASH}/${PATCH_FILE}"
+          curl -LSso new.patch --retry 3 "https://raw.githubusercontent.com/${PATCH_REPO}/${NEW_HASH}/${PATCH_FILE}"
       - name: Interdiff and Apply
         if: steps.check.outputs.updated == 'true'
         run: |
+          set -euo pipefail
           interdiff old.patch new.patch > diff.patch
-          git apply --reject diff.patch
-      - name: Commit and Push changes
+          git apply --reject --ignore-space-change diff.patch
+      - name: Commit and Push
         if: steps.check.outputs.updated == 'true'
+        uses: ./.github/actions/commit-push
+        with:
+          message: "susfs: patch (${{ steps.check.outputs.new_link }})"
+          ref: ${{ github.ref_name }}
+      - name: Summary
+        if: always()
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add .
-          git commit -m "susfs: patch (${{ steps.check.outputs.new_link }})"
-          git push origin HEAD:${{ github.ref_name }}
+          set -euo pipefail
+          {
+            echo "## 🩹 SUSFS Patch Update"
+            echo ""
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| **Old Commit** | [\`${{ steps.check.outputs.old_hash }}\`](${{ steps.check.outputs.old_link }}) |"
+            echo "| **New Commit** | [\`${{ steps.check.outputs.new_hash }}\`](${{ steps.check.outputs.new_link }}) |"
+            echo "| **Patch Repo** | \`${PATCH_REPO}\` |"
+            echo "| **Patch File** | \`${PATCH_FILE}\` |"
+            echo ""
+            echo "**Result:** ${{ steps.check.outputs.updated == 'true' && '🟢 Patched and pushed' || '⚪ Already up to date' }}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   build:
     needs: [update_submodule, patch_susfs]

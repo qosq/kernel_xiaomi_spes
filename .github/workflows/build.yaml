@@ -1,5 +1,5 @@
 name: Build Kernel spes
-run-name: build-kernel
+run-name: "build-kernel · ${{ github.ref_name }}"
 on:
   workflow_dispatch:
   workflow_call:
@@ -7,6 +7,7 @@ on:
 jobs:
   build_kernel:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     env:
@@ -22,16 +23,29 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
           submodules: true
+      - name: Cache toolchain
+        uses: actions/cache@v6
+        with:
+          path: |
+            clang
+            gcc64
+            gcc32
+          key: toolchain
       - name: Install tools
         run: |
+          set -euo pipefail
           sudo apt-get update && sudo apt-get install -y bison flex bc libssl-dev cpio lz4 xz-utils libelf-dev
-          curl -LSsOJ https://github.com/qosq/toolchain-android/releases/download/clang-22/toolchain.tar.gz
-          tar -xzf toolchain.tar.gz
-          echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
-          echo "$GITHUB_WORKSPACE/gcc64/bin" >> $GITHUB_PATH
-          echo "$GITHUB_WORKSPACE/gcc32/bin" >> $GITHUB_PATH
+          if [[ ! -d clang ]]; then
+            curl -LSsOJ --retry 3 https://github.com/qosq/toolchain-android/releases/download/clang-22/toolchain.tar.gz
+            tar -xzf toolchain.tar.gz
+            rm -f toolchain.tar.gz
+          fi
+          echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/gcc64/bin" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/gcc32/bin" >> "$GITHUB_PATH"
       - name: Compile kernel
         run: |
+          set -euo pipefail
           export KBUILD_BUILD_USER="android-build"
           export KBUILD_BUILD_HOST="abm-p-$(shuf -i 1000-9999 -n 1)"
           export KBUILD_BUILD_VERSION="1"
@@ -48,12 +62,11 @@ jobs:
           path: 'anykernel'
       - name: Copy kernel Image
         run: |
+          set -euo pipefail
           cp ./out/arch/arm64/boot/Image.gz ./anykernel
           rm -f anykernel/README.md
       - name: Get Short SHA
-        run: |
-          FULL_SHA=$(git rev-parse HEAD 2>/dev/null || echo "${{ github.sha }}")
-          echo "SHORT_SHA=${FULL_SHA::7}" >> $GITHUB_ENV
+        run: echo "SHORT_SHA=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_ENV"
       - name: Upload kernel
         uses: actions/upload-artifact@v7
         with:
@@ -69,3 +82,25 @@ jobs:
           include-hidden-files: true
           archive: false
           retention-days: 7
+      - name: Build summary
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "## 🔨 Kernel Build Summary"
+            echo ""
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| **Commit** | \`$(git rev-parse --short=7 HEAD)\` |"
+            echo "| **Branch** | \`${{ github.ref_name }}\` |"
+            echo "| **Compiler** | \`$(clang --version 2>/dev/null | head -1 || echo 'N/A')\` |"
+            if [[ -f ./out/arch/arm64/boot/Image.gz ]]; then
+              echo "| **Image Size** | \`$(du -h ./out/arch/arm64/boot/Image.gz | cut -f1)\` |"
+              echo "| **Status** | ✅ Success |"
+            else
+              echo "| **Image Size** | — |"
+              echo "| **Status** | ❌ Failed |"
+            fi
+            echo ""
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
