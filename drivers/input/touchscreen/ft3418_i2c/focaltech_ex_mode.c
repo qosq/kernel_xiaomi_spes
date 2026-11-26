@@ -274,12 +274,33 @@ int fts_ex_mode_recovery(struct fts_ts_data *ts_data)
         fts_ex_mode_switch(MODE_COVER, ENABLE);
     }
 
-    if (ts_data->charger_mode) {
-        fts_ex_mode_switch(MODE_CHARGER, ENABLE);
-    }
+	/*
+ 	* Replacement FT3418 panels need a write to register 0x8B
+ 	* after reset/resume to start touch scanning.
+ 	*/
+	fts_ex_mode_switch(MODE_CHARGER,
+        	           ts_data->charger_mode ? ENABLE : DISABLE);
 
     return 0;
 }
+
+int lct_fts_set_charger_mode(bool en)
+{
+	int ret = 0;
+	struct fts_ts_data *ts_data = fts_data;
+
+	if (en) {
+		FTS_INFO("enter charger mode");
+		ret = fts_ex_mode_switch(MODE_CHARGER, ENABLE);
+	} else {
+		FTS_INFO("exit charger mode");
+		ret = fts_ex_mode_switch(MODE_CHARGER, DISABLE);
+	}
+
+	FTS_INFO("charger mode:%d", ts_data->charger_mode);
+	return ret;
+}
+
 
 int fts_ex_mode_init(struct fts_ts_data *ts_data)
 {

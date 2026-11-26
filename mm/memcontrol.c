@@ -608,6 +608,12 @@ static void mem_cgroup_update_tree(struct mem_cgroup *memcg, struct page *page)
 	struct mem_cgroup_per_node *mz;
 	struct mem_cgroup_tree_per_node *mctz;
 
+	if (lru_gen_enabled()) {
+		if (soft_limit_excess(memcg))
+			lru_gen_soft_reclaim(memcg, page_to_nid(page));
+		return;
+	}
+
 	mctz = soft_limit_tree_from_page(page);
 	if (!mctz)
 		return;
@@ -2861,6 +2867,9 @@ unsigned long mem_cgroup_soft_limit_reclaim(pg_data_t *pgdat, int order,
 	unsigned long excess;
 	unsigned long nr_scanned;
 
+	if (lru_gen_enabled())
+		return 0;
+
 	if (order > 0)
 		return 0;
 
@@ -4663,6 +4672,7 @@ static int mem_cgroup_css_online(struct cgroup_subsys_state *css)
 	/* Online state pins memcg ID, memcg ID pins CSS */
 	atomic_set(&memcg->id.ref, 1);
 	css_get(css);
+	lru_gen_online_memcg(memcg);
 	return 0;
 }
 
@@ -4689,6 +4699,7 @@ static void mem_cgroup_css_offline(struct cgroup_subsys_state *css)
 	memcg_offline_kmem(memcg);
 	wb_memcg_offline(memcg);
 
+	lru_gen_offline_memcg(memcg);
 	mem_cgroup_id_put(memcg);
 }
 
@@ -4696,6 +4707,7 @@ static void mem_cgroup_css_released(struct cgroup_subsys_state *css)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
 
+	lru_gen_release_memcg(memcg);
 	invalidate_reclaim_iterators(memcg);
 }
 
@@ -5994,33 +6006,33 @@ static unsigned long effective_protection(unsigned long usage,
  *     an unprotected supply of reclaimable memory from other cgroups.
  *   MEMCG_PROT_MIN: cgroup memory is protected
  */
-enum mem_cgroup_protection mem_cgroup_protected(struct mem_cgroup *root,
+void mem_cgroup_calculate_protection(struct mem_cgroup *root,
 						struct mem_cgroup *memcg)
 {
 	unsigned long usage, parent_usage;
 	struct mem_cgroup *parent;
 
 	if (mem_cgroup_disabled())
-		return MEMCG_PROT_NONE;
+		return;
 
 	if (!root)
 		root = root_mem_cgroup;
 	if (memcg == root)
-		return MEMCG_PROT_NONE;
+		return;
 
 	usage = page_counter_read(&memcg->memory);
 	if (!usage)
-		return MEMCG_PROT_NONE;
+		return;
 
 	parent = parent_mem_cgroup(memcg);
 	/* No parent means a non-hierarchical mode on v1 memcg */
 	if (!parent)
-		return MEMCG_PROT_NONE;
+		return;
 
 	if (parent == root) {
 		memcg->memory.emin = memcg->memory.min;
 		memcg->memory.elow = memcg->memory.low;
-		goto out;
+		return;
 	}
 
 	parent_usage = page_counter_read(&parent->memory);
@@ -6033,14 +6045,60 @@ enum mem_cgroup_protection mem_cgroup_protected(struct mem_cgroup *root,
 			memcg->memory.low, READ_ONCE(parent->memory.elow),
 			atomic_long_read(&parent->memory.children_low_usage));
 
-out:
-	if (usage <= memcg->memory.emin)
-		return MEMCG_PROT_MIN;
-	else if (usage <= memcg->memory.elow)
-		return MEMCG_PROT_LOW;
-	else
-		return MEMCG_PROT_NONE;
 }
+
+enum mem_cgroup_protection mem_cgroup_protected(struct mem_cgroup *root,
+						struct mem_cgroup *memcg)
+{
+	unsigned long usage;
+
+	if (mem_cgroup_disabled())
+		return MEMCG_PROT_NONE;
+	if (!root)
+		root = root_mem_cgroup;
+	if (memcg == root || !parent_mem_cgroup(memcg))
+		return MEMCG_PROT_NONE;
+	usage = page_counter_read(&memcg->memory);
+	if (!usage)
+		return MEMCG_PROT_NONE;
+
+	mem_cgroup_calculate_protection(root, memcg);
+	if (usage <= READ_ONCE(memcg->memory.emin))
+		return MEMCG_PROT_MIN;
+	if (usage <= READ_ONCE(memcg->memory.elow))
+		return MEMCG_PROT_LOW;
+	return MEMCG_PROT_NONE;
+}
+
+#ifdef CONFIG_LRU_GEN
+/* Calculate parents before children for an isolated reclaim query. */
+void mem_cgroup_protection_path(struct mem_cgroup *root,
+			       struct mem_cgroup *memcg)
+{
+	struct cgroup *cg;
+	int level;
+
+	if (mem_cgroup_disabled())
+		return;
+
+	if (!root)
+		root = root_mem_cgroup;
+	if (memcg == root)
+		return;
+
+	cg = memcg->css.cgroup;
+	rcu_read_lock();
+	for (level = root->css.cgroup->level + 1; level <= cg->level; level++) {
+		struct cgroup *ancestor = cgroup_ancestor(cg, level);
+		struct cgroup_subsys_state *css;
+
+		css = rcu_dereference(ancestor->subsys[memory_cgrp_id]);
+		if (css)
+			mem_cgroup_calculate_protection(root, mem_cgroup_from_css(css));
+	}
+	rcu_read_unlock();
+}
+#endif
 
 /**
  * mem_cgroup_try_charge - try charging a page
